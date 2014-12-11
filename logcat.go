@@ -104,10 +104,18 @@ func main() {
 	reader := bufio.NewReader(stdout)
 	for {
 		s, err := reader.ReadString('\n')
+        if err == io.EOF {
+            break
+        }
 		if err == nil {
 			array := []rune(s)
-			ct.ChangeColor(colorMap[array[0]], false, ct.None, false)
-			fmt.Print(s)
+            color := colorMap[array[0]]
+            if color == ct.None {
+                ct.ResetColor()
+            } else {
+			    ct.ChangeColor(colorMap[array[0]], false, ct.None, false)
+            }
+            fmt.Print(s)
 		}
 	}
 
