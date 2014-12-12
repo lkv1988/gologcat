@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"io"
+	"os/signal"
 )
 
 var colorMap map[rune]ct.Color
@@ -87,7 +88,18 @@ func main() {
 	}
 	// load config in $HOME/.gologcat
 	tryParseConfig()
-	cmd := exec.Command("adb", "logcat")
+
+	// parse cmdline args
+	cmds := []string{"logcat"}
+	for _, s := range os.Args {
+		if strings.EqualFold(s, "gologcat") {
+			continue
+		}
+		cmds = append(cmds, s)
+	}
+
+	cmd := exec.Command("adb", cmds...)
+
 	stdout, err := cmd.StdoutPipe();
 	defer stdout.Close()
 	if err != nil {
@@ -102,21 +114,37 @@ func main() {
 		return
 	}
 	reader := bufio.NewReader(stdout)
-	for {
-		s, err := reader.ReadString('\n')
-        if err == io.EOF {
-            break
-        }
-		if err == nil {
-			array := []rune(s)
-            color := colorMap[array[0]]
-            if color == ct.None {
-                ct.ResetColor()
-            } else {
-			    ct.ChangeColor(colorMap[array[0]], false, ct.None, false)
-            }
-            fmt.Print(s)
-		}
-	}
+	signalChan := make(chan os.Signal, 1)
+	cleanChan := make(chan bool)
+	signal.Notify(signalChan, os.Interrupt)
 
+	go func() {
+		for {
+			s, err := reader.ReadString('\n')
+			if err == io.EOF {
+				cleanChan <- true
+				break
+			}
+			if err == nil {
+				array := []rune(s)
+				color := colorMap[array[0]]
+				if color == ct.None {
+					ct.ResetColor()
+				} else {
+					ct.ChangeColor(colorMap[array[0]], false, ct.None, false)
+				}
+				fmt.Print(s)
+			}
+		}
+	}()
+	defer ct.ResetColor()
+
+	go func() {
+		for _ = range signalChan {
+			fmt.Println("User interrupt")
+			ct.ResetColor()
+			cleanChan <- true
+		}
+	}()
+	<-cleanChan
 }
